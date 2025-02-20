@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-import sys
+import argparse
 
 def remove_paper_background(image, block_size=251, constant=10, hole_close_iterations=1):
     # Convert to grayscale
@@ -29,13 +29,16 @@ def remove_paper_background(image, block_size=251, constant=10, hole_close_itera
 
     return result
 
-if len(sys.argv) != 3:
-    print("Usage: script.py <input_image> <output_image>")
-    sys.exit(1)
+parser = argparse.ArgumentParser(description='Process an image to remove paper background.')
+parser.add_argument('input_image', help='Input image file')
+parser.add_argument('output_image', help='Output image file')
+parser.add_argument('--color', action='store_true', help='Use original colors')
+parser.add_argument('--binary', action='store_true', help='Apply binary threshold')
+parser.add_argument('--constant', type=int, default=20, help='Constant value for threshold')
 
-input_image = sys.argv[1]
-output_image = sys.argv[2]
-image = cv2.imread(input_image)
+args = parser.parse_args()
+
+image = cv2.imread(args.input_image)
 
 # Resize the image to a maximum of 2000x2000
 if image.shape[0] > 2000 or image.shape[1] > 2000:
@@ -47,17 +50,22 @@ if image.shape[0] > 2000 or image.shape[1] > 2000:
 # Parameters
 min_image_dimension = max(image.shape[0], image.shape[1])
 block_size = (min_image_dimension // 2) * 2 + 1
-constant = 20
 hole_close_iterations = 1
 
-processed = remove_paper_background(image, block_size, constant, hole_close_iterations)
+processed = remove_paper_background(image, block_size, args.constant, hole_close_iterations)
+
+if args.color:
+    processed[:, :, :3] = image[:, :, :3]
+
+if args.binary:
+    processed[:, :, 3] = np.where(processed[:, :, 3] > 0, 255, 0)
 
 # If it is a JPG, add a white background
-if output_image.endswith('.jpg'):
+if args.output_image.endswith('.jpg'):
     alpha = processed[:, :, 3] / 255.0
     white_background = np.ones_like(processed[:, :, :3], dtype=np.uint8) * 255
     for c in range(3):
         white_background[:, :, c] = white_background[:, :, c] * (1 - alpha) + processed[:, :, c] * alpha
     processed = white_background
 
-cv2.imwrite(output_image, processed)
+cv2.imwrite(args.output_image, processed)
