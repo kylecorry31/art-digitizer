@@ -35,6 +35,7 @@ parser.add_argument('output_image', help='Output image file')
 parser.add_argument('--color', action='store_true', help='Use original colors')
 parser.add_argument('--binary', action='store_true', help='Apply binary threshold')
 parser.add_argument('--constant', type=int, default=20, help='Constant value for threshold')
+parser.add_argument('--background', action='store_true', help='Use a white background')
 
 args = parser.parse_args()
 
@@ -61,7 +62,7 @@ if args.binary:
     processed[:, :, 3] = np.where(processed[:, :, 3] > 0, 255, 0)
 
 # If it is a JPG, add a white background
-if args.output_image.endswith('.jpg'):
+if args.output_image.endswith('.jpg') or args.background:
     alpha = processed[:, :, 3] / 255.0
     white_background = np.ones_like(processed[:, :, :3], dtype=np.uint8) * 255
     for c in range(3):
