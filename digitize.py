@@ -2,15 +2,17 @@ import cv2
 import numpy as np
 import argparse
 
-def remove_paper_background(image, block_size=251, constant=10, hole_close_iterations=1):
+def remove_paper_background(image, hole_close_iterations=1):
     # Convert to grayscale
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 
-    # Extract lines using adaptive threshold
-    thresh = cv2.adaptiveThreshold(
-        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, block_size, constant
-    )
+    thresh = cv2.threshold(
+        blurred,
+        0,
+        255,
+        cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
+    )[1]
 
     # Fill small holes inside lines
     kernel = np.ones((3, 3), np.uint8)
@@ -34,7 +36,6 @@ parser.add_argument('input_image', help='Input image file')
 parser.add_argument('output_image', help='Output image file')
 parser.add_argument('--color', action='store_true', help='Use original colors')
 parser.add_argument('--binary', action='store_true', help='Apply binary threshold')
-parser.add_argument('--constant', type=int, default=20, help='Constant value for threshold')
 parser.add_argument('--background', action='store_true', help='Use a white background')
 
 args = parser.parse_args()
@@ -50,10 +51,9 @@ if image.shape[0] > 2000 or image.shape[1] > 2000:
 
 # Parameters
 min_image_dimension = max(image.shape[0], image.shape[1])
-block_size = (min_image_dimension // 2) * 2 + 1
 hole_close_iterations = 1
 
-processed = remove_paper_background(image, block_size, args.constant, hole_close_iterations)
+processed = remove_paper_background(image, hole_close_iterations)
 
 if args.color:
     processed[:, :, :3] = image[:, :, :3]
