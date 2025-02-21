@@ -1,7 +1,11 @@
 # Art Digitizer
 
-### Digitize Grayscale Drawings
-If you have a drawing that is in grayscale, run the following command to digitize it:
-`python digitize-gray-scale.py <path-to-image> <output-path>`
+### Digitize Drawings
+Run the following command to digitize a drawing:
+`python digitize.py <path-to-image> <output-path>`
 
-It will produce an image containing only the drawing in grayscale, with the background being transparent or white depending on the file format.
+Flags:
+- `--background`: Use a white background (default: transparent)
+- `--constant`: The constant value for adaptive thresholding (default: 20)
+- `--binary`: No semi-transparent pixels
+- `--color`: Render the image in color
