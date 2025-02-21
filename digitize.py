@@ -2,6 +2,57 @@ import cv2
 import numpy as np
 import argparse
 
+def quantize_image(image, num_colors, background_color):
+    rgb = cv2.cvtColor(image, cv2.COLOR_BGRA2RGB)
+    background_color = np.array([background_color[2], background_color[1], background_color[0]])
+    # Reshape the image to be a list of pixels
+    pixels = rgb.reshape((-1, 3))
+
+    # Convert to float32 for k-means
+    pixels = np.float32(pixels)
+
+    # Define criteria and apply kmeans()
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 200, 0.1)
+    compactness, labels, centers = cv2.kmeans(pixels, num_colors, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
+
+    # Convert centers to uint8
+    centers = np.uint8(centers)
+
+    # Calculate distance of each center from background color
+    color_distances = np.sqrt(np.sum((centers - background_color[:3])**2, axis=1))
+
+    # Create mask for centers that are far enough from background
+    # Using 50 as threshold distance (adjust as needed)
+    valid_centers = color_distances > 50
+
+    # Create mapping that maps invalid centers to background color
+    center_mapping = np.arange(len(centers))
+    center_mapping[~valid_centers] = -1
+
+    # Map pixels to centers, using background color for invalid centers
+    quantized = np.zeros_like(pixels, dtype=np.uint8)
+    for i in range(len(centers)):
+        if valid_centers[i]:
+            mask = labels.flatten() == i
+            quantized[mask] = centers[i]
+        else:
+            # Find the closest valid center or fill with the background color
+            other_centers = centers[valid_centers]
+            closest_valid_center = np.argmin(np.linalg.norm(centers[i] - other_centers, axis=1))
+            mask = labels.flatten() == i
+            quantized[mask] = other_centers[closest_valid_center]
+
+    # Reshape back to original image dimensions
+    quantized_image = quantized.reshape(rgb.shape)
+
+    # Convert back to BGR for saving/displaying with cv2
+    quantized_image = cv2.cvtColor(quantized_image, cv2.COLOR_RGB2BGRA)
+
+    # Copy alpha channel from original image
+    quantized_image[:, :, 3] = image[:, :, 3]
+
+    return quantized_image
+
 def remove_paper_background(image, hole_close_iterations=1, threshold_algorithm='otsu', thin_lines=False):
     # Convert to grayscale
     if threshold_algorithm == 'otsu':
@@ -62,7 +113,9 @@ def remove_paper_background(image, hole_close_iterations=1, threshold_algorithm=
     result[distance_from_black >= 254] = [0, 0, 0, 0]
     result[:, :, 3] = cv2.bitwise_and(result[:, :, 3], mask)
 
-    return result
+    average_background_color = np.mean(image[distance_from_black < 254], axis=0)
+
+    return (result, average_background_color)
 
 parser = argparse.ArgumentParser(description='Process an image to remove paper background.')
 parser.add_argument('input_image', help='Input image file')
@@ -74,6 +127,7 @@ parser.add_argument('--threshold', type=str, default='otsu', choices=['otsu', 'h
 parser.add_argument('--padding', type=int, default=100, help='Padding in pixels around the drawing')
 parser.add_argument('--rotate', type=float, default=0.0, help='Rotation angle in degrees')
 parser.add_argument('--thin', action='store_true', help='Apply line thinning')
+parser.add_argument('--quantize', type=int, default=None, help='Number of colors to quantize to')
 
 args = parser.parse_args()
 
@@ -90,13 +144,16 @@ if image.shape[0] > 2000 or image.shape[1] > 2000:
 min_image_dimension = max(image.shape[0], image.shape[1])
 hole_close_iterations = 1
 
-processed = remove_paper_background(image, hole_close_iterations, args.threshold, args.thin)
+processed, background_color = remove_paper_background(image, hole_close_iterations, args.threshold, args.thin)
 
 if args.color:
     processed[:, :, :3] = image[:, :, :3]
 
 if args.binary:
     processed[:, :, 3] = np.where(processed[:, :, 3] > 0, 255, 0)
+
+if args.quantize:
+    processed = quantize_image(processed, args.quantize, background_color)
 
 # Rectangular crop of the image to contain the non-transparent pixels
 non_zero_indices = np.argwhere(processed[:, :, 3] > 0)
