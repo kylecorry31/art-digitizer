@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import argparse
 
-def remove_paper_background(image, hole_close_iterations=1, threshold_algorithm='otsu'):
+def remove_paper_background(image, hole_close_iterations=1, threshold_algorithm='otsu', padding=100, thin_lines=False):
     # Convert to grayscale
     if threshold_algorithm == 'otsu':
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -36,6 +36,10 @@ def remove_paper_background(image, hole_close_iterations=1, threshold_algorithm=
     kernel = np.ones((3, 3), np.uint8)
     closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=hole_close_iterations)
 
+    if thin_lines:
+        # Apply thinning using Zhang-Suen algorithm
+        closed = cv2.ximgproc.thinning(closed)
+
     # Smooth edges of lines only (alpha mask)
     mask = cv2.GaussianBlur(closed, (3, 3), 0)
 
@@ -47,6 +51,16 @@ def remove_paper_background(image, hole_close_iterations=1, threshold_algorithm=
     result[distance_from_black >= 254] = [0, 0, 0, 0]
     result[:, :, 3] = cv2.bitwise_and(result[:, :, 3], mask)
 
+    # Rectangular crop of the image to contain the non-transparent pixels
+    non_zero_indices = np.argwhere(result[:, :, 3] > 0)
+    if non_zero_indices.size > 0:
+        y_min, x_min = non_zero_indices.min(axis=0)
+        y_max, x_max = non_zero_indices.max(axis=0)
+        result = result[y_min:y_max+1, x_min:x_max+1]
+
+    # Pad the image with transparent black pixels
+    result = cv2.copyMakeBorder(result, padding, padding, padding, padding, cv2.BORDER_CONSTANT, value=[0, 0, 0, 0])
+
     return result
 
 parser = argparse.ArgumentParser(description='Process an image to remove paper background.')
@@ -56,6 +70,9 @@ parser.add_argument('--color', action='store_true', help='Use original colors')
 parser.add_argument('--binary', action='store_true', help='Apply binary threshold')
 parser.add_argument('--background', action='store_true', help='Use a white background')
 parser.add_argument('--threshold', type=str, default='otsu', choices=['otsu', 'hsv', 'binary'], help='Thresholding method')
+parser.add_argument('--padding', type=int, default=100, help='Padding in pixels around the drawing')
+parser.add_argument('--rotate', type=float, default=0.0, help='Rotation angle in degrees')
+parser.add_argument('--thin', action='store_true', help='Apply line thinning')
 
 args = parser.parse_args()
 
@@ -72,13 +89,18 @@ if image.shape[0] > 2000 or image.shape[1] > 2000:
 min_image_dimension = max(image.shape[0], image.shape[1])
 hole_close_iterations = 1
 
-processed = remove_paper_background(image, hole_close_iterations, args.threshold)
+processed = remove_paper_background(image, hole_close_iterations, args.threshold, args.padding, args.thin)
 
 if args.color:
     processed[:, :, :3] = image[:, :, :3]
 
 if args.binary:
     processed[:, :, 3] = np.where(processed[:, :, 3] > 0, 255, 0)
+
+if args.rotate:
+    center = (processed.shape[1] // 2, processed.shape[0] // 2)
+    rotation_matrix = cv2.getRotationMatrix2D(center, args.rotate, 1.0)
+    processed = cv2.warpAffine(processed, rotation_matrix, (processed.shape[1], processed.shape[0]))
 
 # If it is a JPG, add a white background
 if args.output_image.endswith('.jpg') or args.background:
