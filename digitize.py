@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import argparse
 
-def remove_paper_background(image, hole_close_iterations=1, threshold_algorithm='otsu', padding=100, thin_lines=False):
+def remove_paper_background(image, hole_close_iterations=1, threshold_algorithm='otsu', thin_lines=False):
     # Convert to grayscale
     if threshold_algorithm == 'otsu':
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -51,16 +51,6 @@ def remove_paper_background(image, hole_close_iterations=1, threshold_algorithm=
     result[distance_from_black >= 254] = [0, 0, 0, 0]
     result[:, :, 3] = cv2.bitwise_and(result[:, :, 3], mask)
 
-    # Rectangular crop of the image to contain the non-transparent pixels
-    non_zero_indices = np.argwhere(result[:, :, 3] > 0)
-    if non_zero_indices.size > 0:
-        y_min, x_min = non_zero_indices.min(axis=0)
-        y_max, x_max = non_zero_indices.max(axis=0)
-        result = result[y_min:y_max+1, x_min:x_max+1]
-
-    # Pad the image with transparent black pixels
-    result = cv2.copyMakeBorder(result, padding, padding, padding, padding, cv2.BORDER_CONSTANT, value=[0, 0, 0, 0])
-
     return result
 
 parser = argparse.ArgumentParser(description='Process an image to remove paper background.')
@@ -89,13 +79,23 @@ if image.shape[0] > 2000 or image.shape[1] > 2000:
 min_image_dimension = max(image.shape[0], image.shape[1])
 hole_close_iterations = 1
 
-processed = remove_paper_background(image, hole_close_iterations, args.threshold, args.padding, args.thin)
+processed = remove_paper_background(image, hole_close_iterations, args.threshold, args.thin)
 
 if args.color:
     processed[:, :, :3] = image[:, :, :3]
 
 if args.binary:
     processed[:, :, 3] = np.where(processed[:, :, 3] > 0, 255, 0)
+
+# Rectangular crop of the image to contain the non-transparent pixels
+non_zero_indices = np.argwhere(processed[:, :, 3] > 0)
+if non_zero_indices.size > 0:
+    y_min, x_min = non_zero_indices.min(axis=0)
+    y_max, x_max = non_zero_indices.max(axis=0)
+    processed = processed[y_min:y_max+1, x_min:x_max+1]
+
+# Pad the image with transparent black pixels
+processed = cv2.copyMakeBorder(processed, args.padding, args.padding, args.padding, args.padding, cv2.BORDER_CONSTANT, value=[0, 0, 0, 0])
 
 if args.rotate:
     center = (processed.shape[1] // 2, processed.shape[0] // 2)
