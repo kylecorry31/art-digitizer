@@ -131,6 +131,53 @@ def remove_paper_background(image, hole_close_iterations=1, threshold_algorithm=
 
     return (result, average_background_color)
 
+def blend_lines(image, percent):
+    # Create a binary mask of non-black pixels with a higher threshold
+    # Convert to grayscale and apply Otsu's threshold
+    gray = cv2.cvtColor(image, cv2.COLOR_BGRA2GRAY)
+    thresh, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+    # Create masks for black and non-black pixels based on threshold
+    non_black = (gray > thresh) & (image[:,:,3] > 0)
+    black_pixels = (gray <= thresh) & (image[:,:,3] > 0)
+
+    if np.any(black_pixels):
+        # For each black pixel, find nearby non-black pixels
+        y_coords, x_coords = np.where(black_pixels)
+        for i in range(len(y_coords)):
+            y, x = y_coords[i], x_coords[i]
+
+            # Look in a square region, starting at 10 pixels and increasing until we have enough neighbors
+            max_size = int(0.05 * min(image.shape[0], image.shape[1]))
+            size = 10
+            desired_neighbor_count = 30
+            enough_neighbors = False
+
+            while not enough_neighbors and size <= max_size:
+                y_start = max(0, y-(size // 2))
+                y_end = min(image.shape[0], y+(size // 2 + 1))
+                x_start = max(0, x-(size // 2))
+                x_end = min(image.shape[1], x+(size // 2 + 1))
+
+                neighborhood = non_black[y_start:y_end, x_start:x_end]
+                if np.sum(neighborhood) >= desired_neighbor_count:
+                    enough_neighbors = True
+                else:
+                    size += 10
+
+            neighborhood = non_black[y_start:y_end, x_start:x_end]
+            if np.any(neighborhood):
+                # Get colors of nearby non-black pixels
+                nearby_colors = image[y_start:y_end, x_start:x_end][neighborhood > 0]
+                avg_color = np.mean(nearby_colors, axis=0)
+                # Make it darker
+                image[y,x] = (avg_color * (percent / 100)).astype(np.uint8)
+                image[y,x,3] = max(127, avg_color[3])
+            else:
+                image[y,x,3] = np.array([0, 0, 0])
+
+    return image
+
 parser = argparse.ArgumentParser(description='Process an image to remove paper background.')
 parser.add_argument('input_image', help='Input image file')
 parser.add_argument('output_image', help='Output image file')
@@ -142,6 +189,7 @@ parser.add_argument('--padding', type=int, default=100, help='Padding in pixels 
 parser.add_argument('--rotate', type=float, default=0.0, help='Rotation angle in degrees')
 parser.add_argument('--thin', action='store_true', help='Apply line thinning')
 parser.add_argument('--quantize', type=int, default=None, help='Number of colors to quantize to')
+parser.add_argument('--blend-lines', type=int, default=None, help='Replace black lines with darker shades of nearby colors. Pass in the percent (integer).')
 
 args = parser.parse_args()
 
@@ -168,6 +216,9 @@ if args.binary:
 
 if args.quantize:
     processed = quantize_image(processed, args.quantize, background_color)
+
+if args.blend_lines:
+    processed = blend_lines(processed, args.blend_lines)
 
 # Rectangular crop of the image to contain the non-transparent pixels
 non_zero_indices = np.argwhere(processed[:, :, 3] > 0)
