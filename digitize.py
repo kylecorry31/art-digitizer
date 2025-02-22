@@ -83,16 +83,30 @@ def remove_paper_background(image, hole_close_iterations=1, threshold_algorithm=
         # Create mask and fill contours
         thresh = np.zeros_like(gray)
         cv2.drawContours(thresh, contours, -1, (255,255,255), -1)
-    else:
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 
-        thresh = cv2.threshold(
-            blurred,
-            127,
-            255,
-            cv2.THRESH_BINARY_INV
-        )[1]
+    else:
+        try:
+            threshold_value = int(threshold_algorithm)
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+
+            thresh = cv2.threshold(
+                blurred,
+                threshold_value,
+                255,
+                cv2.THRESH_BINARY_INV
+            )[1]
+        except ValueError:
+            # If threshold is not a number, use default threshold
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+
+            thresh = cv2.threshold(
+                blurred,
+                127,
+                255,
+                cv2.THRESH_BINARY_INV
+            )[1]
 
     # Fill small holes inside lines
     kernel = np.ones((3, 3), np.uint8)
@@ -123,7 +137,7 @@ parser.add_argument('output_image', help='Output image file')
 parser.add_argument('--color', action='store_true', help='Use original colors')
 parser.add_argument('--binary', action='store_true', help='Apply binary threshold')
 parser.add_argument('--background', action='store_true', help='Use a white background')
-parser.add_argument('--threshold', type=str, default='otsu', choices=['otsu', 'hsv', 'binary', 'contour'], help='Thresholding method')
+parser.add_argument('--threshold', type=str, default='otsu', help='Thresholding method')
 parser.add_argument('--padding', type=int, default=100, help='Padding in pixels around the drawing')
 parser.add_argument('--rotate', type=float, default=0.0, help='Rotation angle in degrees')
 parser.add_argument('--thin', action='store_true', help='Apply line thinning')
