@@ -3,10 +3,18 @@ import numpy as np
 import argparse
 
 def quantize_image(image, num_colors, background_color):
-    rgb = cv2.cvtColor(image, cv2.COLOR_BGRA2RGB)
-    background_color = np.array([background_color[2], background_color[1], background_color[0]])
+    # Create mask of non-transparent pixels
+    non_transparent_mask = image[:, :, 3] > 0
+
+    # Only process non-transparent pixels
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    background_color = np.array([[[background_color[2], background_color[1], background_color[0]]]], dtype=np.uint8)
+    background_color = cv2.cvtColor(background_color, cv2.COLOR_BGR2HSV)[0][0]
+
     # Reshape the image to be a list of pixels
-    pixels = rgb.reshape((-1, 3))
+    pixels = hsv.reshape((-1, 3))
+    pixels = pixels[non_transparent_mask.flatten()]
 
     # Convert to float32 for k-means
     pixels = np.float32(pixels)
@@ -19,11 +27,14 @@ def quantize_image(image, num_colors, background_color):
     centers = np.uint8(centers)
 
     # Calculate distance of each center from background color
-    color_distances = np.sqrt(np.sum((centers - background_color[:3])**2, axis=1))
+    # Convert centers and background color to RGB for proper distance comparison
+    centers_rgb = cv2.cvtColor(centers.reshape(-1, 1, 3), cv2.COLOR_HSV2BGR)
+    background_rgb = cv2.cvtColor(np.array([[background_color]], dtype=np.uint8), cv2.COLOR_HSV2BGR)
+    color_distances = np.sqrt(np.sum((centers_rgb.reshape(-1,3) - background_rgb.reshape(-1,3))**2, axis=1))
 
     # Create mask for centers that are far enough from background
     # Using 50 as threshold distance (adjust as needed)
-    valid_centers = color_distances > 50
+    valid_centers = color_distances > 0
 
     # Create mapping that maps invalid centers to background color
     center_mapping = np.arange(len(centers))
@@ -42,11 +53,13 @@ def quantize_image(image, num_colors, background_color):
             mask = labels.flatten() == i
             quantized[mask] = other_centers[closest_valid_center]
 
-    # Reshape back to original image dimensions
-    quantized_image = quantized.reshape(rgb.shape)
+    # Create output image with same dimensions as input
+    quantized_image = np.zeros_like(hsv)
+    quantized_image[non_transparent_mask] = quantized
 
     # Convert back to BGR for saving/displaying with cv2
-    quantized_image = cv2.cvtColor(quantized_image, cv2.COLOR_RGB2BGRA)
+    quantized_image = cv2.cvtColor(quantized_image, cv2.COLOR_HSV2BGR)
+    quantized_image = cv2.cvtColor(quantized_image, cv2.COLOR_BGR2BGRA)
 
     # Copy alpha channel from original image
     quantized_image[:, :, 3] = image[:, :, 3]
